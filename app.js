@@ -73,12 +73,11 @@ function init() {
     window.addEventListener('resize', () => {
         if (state.sourceImage) {
             updatePreviewCanvasSize();
-            // Recalculate minimum scale after resize
+            // Recalculate minimum and maximum scales after resize
             const minScale = getMinimumScale();
-            // If current scale is below minimum, adjust it
-            if (state.imageScale < minScale) {
-                state.imageScale = minScale;
-            }
+            const maxScale = getMaximumScale();
+            // Clamp scale to valid range
+            state.imageScale = Math.max(minScale, Math.min(state.imageScale, maxScale));
             initializeImagePosition();
             updatePreview();
         }
@@ -215,6 +214,62 @@ function getMinimumScale() {
     return 1.0;
 }
 
+// Get maximum scale (100% = 1:1 pixel ratio with output size, no upscaling)
+function getMaximumScale() {
+    if (!state.sourceImage) return 1.0;
+    
+    const img = state.sourceImage;
+    
+    // Calculate output dimensions
+    const outputWidth = state.outputWidth;
+    const outputHeight = Math.round((outputWidth * state.aspectRatio.height) / state.aspectRatio.width);
+    
+    // Calculate base cover scale (needed to understand current display scaling)
+    const cropRect = getCropRect();
+    const imageAspect = img.width / img.height;
+    const cropAspect = cropRect.width / cropRect.height;
+    const outputAspect = outputWidth / outputHeight;
+    
+    let baseCoverScale;
+    if (imageAspect > cropAspect) {
+        baseCoverScale = cropRect.height / img.height;
+    } else {
+        baseCoverScale = cropRect.width / img.width;
+    }
+    
+    // Maximum scale: when the visible portion of source image equals output dimensions
+    // At imageScale = 1.0: image covers preview crop (one dimension matches cropRect)
+    // At maxScale: we want the visible source pixels to equal output pixels (1:1)
+    
+    // The visible crop area in source coordinates depends on the display scale
+    // We need to find when: visibleSourceWidth = outputWidth OR visibleSourceHeight = outputHeight
+    
+    // At any scale, the visible area is the crop rectangle mapped to source coordinates
+    // The mapping depends on: displayDimension = sourceDimension * baseCoverScale * imageScale
+    // So: visibleSourceDimension = cropRectDimension / (baseCoverScale * imageScale)
+    
+    // At maxScale, we want: visibleSourceDimension = outputDimension
+    // So: outputDimension = cropRectDimension / (baseCoverScale * maxScale)
+    // Therefore: maxScale = cropRectDimension / (baseCoverScale * outputDimension)
+    
+    let maxScale;
+    if (imageAspect > outputAspect) {
+        // Image is wider than output - height will be the matching dimension
+        // At max: visibleSourceHeight = outputHeight
+        // visibleSourceHeight = cropRect.height / (baseCoverScale * maxScale)
+        // So: outputHeight = cropRect.height / (baseCoverScale * maxScale)
+        // maxScale = cropRect.height / (baseCoverScale * outputHeight)
+        maxScale = cropRect.height / (baseCoverScale * outputHeight);
+    } else {
+        // Image is taller than output - width will be the matching dimension
+        // At max: visibleSourceWidth = outputWidth
+        // maxScale = cropRect.width / (baseCoverScale * outputWidth)
+        maxScale = cropRect.width / (baseCoverScale * outputWidth);
+    }
+    
+    return maxScale;
+}
+
 // Initialize image position and scale
 function initializeImagePosition() {
     // Start at minimum scale to show as much of image as possible
@@ -330,6 +385,9 @@ function handleAspectRatioPreset(ratioString) {
     // Reinitialize image position for new aspect ratio
     if (state.sourceImage) {
         updatePreviewCanvasSize();
+        // Recalculate max scale and clamp current scale
+        const maxScale = getMaximumScale();
+        state.imageScale = Math.min(state.imageScale, maxScale);
         initializeImagePosition();
     }
     
@@ -341,6 +399,14 @@ function handleAspectRatioPreset(ratioString) {
 // Handle width change
 function handleWidthChange() {
     state.outputWidth = parseInt(elements.widthSelect.value);
+    
+    // Recalculate max scale and clamp current scale if needed
+    if (state.sourceImage) {
+        const maxScale = getMaximumScale();
+        state.imageScale = Math.min(state.imageScale, maxScale);
+        updatePreview();
+    }
+    
     updateDimensionInfo();
     updateCssOutput();
 }
@@ -386,11 +452,12 @@ function handleWheel(event) {
     const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
     const newScale = state.imageScale * zoomFactor;
     
-    // Get minimum scale - never zoom below this
+    // Get minimum and maximum scales
     const minScale = getMinimumScale();
+    const maxScale = getMaximumScale();
     
-    // Clamp scale - minimum to ensure crop is always covered, max 5x minimum
-    const clampedScale = Math.max(minScale, Math.min(newScale, minScale * 5));
+    // Clamp scale - minimum to ensure crop is always covered, max at 100% (1:1 pixel ratio)
+    const clampedScale = Math.max(minScale, Math.min(newScale, maxScale));
     
     // If scale didn't change (hit limit), don't update
     if (clampedScale === state.imageScale) return;
@@ -475,6 +542,9 @@ function handleMouseMove(event) {
         // Reinitialize image position for new aspect ratio
         if (state.sourceImage) {
             updatePreviewCanvasSize();
+            // Recalculate max scale and clamp current scale
+            const maxScale = getMaximumScale();
+            state.imageScale = Math.min(state.imageScale, maxScale);
             initializeImagePosition();
         }
         
