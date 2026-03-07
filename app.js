@@ -6,13 +6,15 @@ const state = {
     previewCtx: null,
     aspectRatio: { width: 16, height: 9 },
     outputWidth: 1920,
-    focalPoint: null,
-    scaleFactor: 1,
+    scaleFactor: 1, // Preview scale factor for large images
+    imageScale: 1, // Zoom level (1.0 = minimum to cover crop area)
+    imageOffset: { x: 0, y: 0 }, // Pan offset
+    isDraggingImage: false,
+    dragStart: { x: 0, y: 0 },
+    dragStartOffset: { x: 0, y: 0 },
     isCustomRatio: false,
     customRatioStart: null,
-    isDraggingFocal: false,
-    isDraggingCorner: false,
-    dragOffset: { x: 0, y: 0 }
+    isDraggingCorner: false
 };
 
 // DOM elements
@@ -24,8 +26,6 @@ const elements = {
     outputSection: document.getElementById('outputSection'),
     exportSection: document.getElementById('exportSection'),
     previewCanvas: document.getElementById('previewCanvas'),
-    focalPointMarker: document.getElementById('focalPointMarker'),
-    cropOverlay: document.getElementById('cropOverlay'),
     resizeHandle: document.getElementById('resizeHandle'),
     presetButtons: document.querySelectorAll('.preset-btn'),
     widthSelect: document.getElementById('widthSelect'),
@@ -61,13 +61,28 @@ function init() {
     elements.exportBtn.addEventListener('click', handleExport);
 
     // Preview canvas interactions
-    elements.previewCanvas.addEventListener('click', handleCanvasClick);
-    elements.focalPointMarker.addEventListener('mousedown', startFocalDrag);
+    elements.previewCanvas.addEventListener('mousedown', startImageDrag);
+    elements.previewCanvas.addEventListener('wheel', handleWheel, { passive: false });
     elements.resizeHandle.addEventListener('mousedown', startCornerDrag);
 
     // Mouse move and up handlers
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    
+    // Window resize handler to update canvas size
+    window.addEventListener('resize', () => {
+        if (state.sourceImage) {
+            updatePreviewCanvasSize();
+            // Recalculate minimum scale after resize
+            const minScale = getMinimumScale();
+            // If current scale is below minimum, adjust it
+            if (state.imageScale < minScale) {
+                state.imageScale = minScale;
+            }
+            initializeImagePosition();
+            updatePreview();
+        }
+    });
 }
 
 // Check WebP support
@@ -105,12 +120,12 @@ async function handleImageUpload(event) {
         img.onload = () => {
             URL.revokeObjectURL(url);
             state.sourceImage = img;
+            
+            // Detect and set aspect ratio to match image
+            detectAndSetImageAspectRatio(img);
+            
             setupPreviewCanvas();
-            // Set default focal point to center
-            state.focalPoint = {
-                x: img.width / 2,
-                y: img.height / 2
-            };
+            initializeImagePosition();
             elements.controlsSection.style.display = 'block';
             elements.previewSection.style.display = 'block';
             elements.outputSection.style.display = 'block';
@@ -138,19 +153,163 @@ function setupPreviewCanvas() {
         state.scaleFactor = 1;
     }
     
-    const previewWidth = img.width * state.scaleFactor;
-    const previewHeight = img.height * state.scaleFactor;
+    state.previewCtx = elements.previewCanvas.getContext('2d');
+    // Disable image smoothing for crisp rendering
+    state.previewCtx.imageSmoothingEnabled = false;
+    updatePreviewCanvasSize();
+}
+
+// Update preview canvas size based on crop rectangle
+function updatePreviewCanvasSize() {
+    const targetAspect = state.aspectRatio.width / state.aspectRatio.height;
     
-    elements.previewCanvas.width = previewWidth;
-    elements.previewCanvas.height = previewHeight;
+    // Get container width to make it responsive but maintain aspect ratio
+    const container = elements.previewCanvas.parentElement;
+    const containerWidth = Math.min(container.clientWidth || 1920, 1920);
+    const maxPreviewWidth = containerWidth - 20; // Account for padding/border
+    
+    // Calculate dimensions maintaining aspect ratio
+    let previewWidth = maxPreviewWidth;
+    let previewHeight = previewWidth / targetAspect;
+    
+    // Limit height to 80vh (viewport height)
+    const maxHeight = Math.min(window.innerHeight * 0.8, 1080);
+    if (previewHeight > maxHeight) {
+        previewHeight = maxHeight;
+        previewWidth = previewHeight * targetAspect;
+    }
+    
+    // Set canvas internal resolution (for crisp rendering)
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const oldWidth = elements.previewCanvas.width;
+    const oldHeight = elements.previewCanvas.height;
+    
+    elements.previewCanvas.width = previewWidth * devicePixelRatio;
+    elements.previewCanvas.height = previewHeight * devicePixelRatio;
+    
+    // Set CSS size (maintains aspect ratio)
     elements.previewCanvas.style.width = `${previewWidth}px`;
     elements.previewCanvas.style.height = `${previewHeight}px`;
     
-    state.previewCtx = elements.previewCanvas.getContext('2d');
+    // Scale context for high DPI displays (only if canvas size changed or context is new)
+    if (state.previewCtx && (oldWidth !== elements.previewCanvas.width || oldHeight !== elements.previewCanvas.height)) {
+        // Reset transform and set new scale
+        state.previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+        state.previewCtx.scale(devicePixelRatio, devicePixelRatio);
+        // Ensure image smoothing is disabled for crisp rendering
+        state.previewCtx.imageSmoothingEnabled = false;
+    }
     
     // Update preview info
-    elements.previewInfo.textContent = 
-        `Preview: ${Math.round(previewWidth)}×${Math.round(previewHeight)}px (Source: ${img.width}×${img.height}px)`;
+    if (state.sourceImage) {
+        elements.previewInfo.textContent = 
+            `Preview: ${Math.round(previewWidth)}×${Math.round(previewHeight)}px (Source: ${state.sourceImage.width}×${state.sourceImage.height}px)`;
+    }
+}
+
+// Get minimum scale to ensure crop area is always covered (object-fit: cover behavior)
+// Returns 1.0 as the base scale (minimum to cover), user can zoom in from there
+function getMinimumScale() {
+    // Always return 1.0 - this is the minimum scale where image just covers crop
+    // The actual scaling is handled in updatePreview
+    return 1.0;
+}
+
+// Initialize image position and scale
+function initializeImagePosition() {
+    // Start at minimum scale to show as much of image as possible
+    // while still covering the crop area
+    state.imageScale = getMinimumScale();
+    state.imageOffset = { x: 0, y: 0 };
+}
+
+// Get crop rectangle in preview canvas coordinates (CSS pixels, not device pixels)
+function getCropRect() {
+    const canvas = elements.previewCanvas;
+    // Return CSS pixel dimensions, not internal canvas resolution
+    // Calculate from canvas dimensions divided by devicePixelRatio
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const cssWidth = canvas.width / devicePixelRatio;
+    const cssHeight = canvas.height / devicePixelRatio;
+    return {
+        x: 0,
+        y: 0,
+        width: cssWidth,
+        height: cssHeight
+    };
+}
+
+// Detect image aspect ratio and set it as default
+function detectAndSetImageAspectRatio(img) {
+    const imageAspect = img.width / img.height;
+    
+    // Preset aspect ratios
+    const presets = [
+        { ratio: '21:9', value: 21/9, width: 21, height: 9 },
+        { ratio: '16:9', value: 16/9, width: 16, height: 9 },
+        { ratio: '3:2', value: 3/2, width: 3, height: 2 },
+        { ratio: '4:3', value: 4/3, width: 4, height: 3 },
+        { ratio: '1:1', value: 1/1, width: 1, height: 1 },
+        { ratio: '3:4', value: 3/4, width: 3, height: 4 },
+        { ratio: '2:3', value: 2/3, width: 2, height: 3 }
+    ];
+    
+    // Find closest matching preset (within 2% tolerance)
+    let closestPreset = null;
+    let minDifference = Infinity;
+    const tolerance = 0.02;
+    
+    for (const preset of presets) {
+        const difference = Math.abs(imageAspect - preset.value);
+        if (difference < minDifference && difference < tolerance) {
+            minDifference = difference;
+            closestPreset = preset;
+        }
+    }
+    
+    if (closestPreset) {
+        // Use matching preset
+        state.aspectRatio = { width: closestPreset.width, height: closestPreset.height };
+        state.isCustomRatio = false;
+        
+        // Highlight the matching button
+        elements.presetButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.ratio === closestPreset.ratio);
+        });
+    } else {
+        // Use image's actual aspect ratio as custom
+        // Simplify to a reasonable ratio (find greatest common divisor approximation)
+        const simplified = simplifyRatio(img.width, img.height);
+        state.aspectRatio = { width: simplified.width, height: simplified.height };
+        state.isCustomRatio = true;
+        
+        // Clear all preset highlights
+        elements.presetButtons.forEach(btn => btn.classList.remove('active'));
+    }
+}
+
+// Simplify ratio to reasonable numbers (approximate GCD)
+function simplifyRatio(width, height) {
+    // Use a tolerance to find approximate ratio
+    const maxDenominator = 100;
+    let bestRatio = { width: width, height: height };
+    let bestError = Infinity;
+    
+    for (let h = 1; h <= maxDenominator; h++) {
+        const w = Math.round((width / height) * h);
+        if (w < 1 || w > maxDenominator * 10) continue;
+        
+        const error = Math.abs((width / height) - (w / h));
+        if (error < bestError) {
+            bestError = error;
+            bestRatio = { width: w, height: h };
+            
+            // If error is very small, we found a good match
+            if (error < 0.001) break;
+        }
+    }
+    
+    return bestRatio;
 }
 
 // Handle aspect ratio preset
@@ -159,23 +318,31 @@ function handleAspectRatioPreset(ratioString) {
     state.aspectRatio = { width: w, height: h };
     state.isCustomRatio = false;
     
-    // Update active button
+    // Update active button - highlight selected, remove highlight from others
     elements.presetButtons.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.ratio === ratioString);
+        if (btn.dataset.ratio === ratioString) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
     });
     
-    // Hide resize handle
-    elements.resizeHandle.style.display = 'none';
+    // Reinitialize image position for new aspect ratio
+    if (state.sourceImage) {
+        updatePreviewCanvasSize();
+        initializeImagePosition();
+    }
     
     updateDimensionInfo();
     updatePreview();
+    updateCssOutput();
 }
 
 // Handle width change
 function handleWidthChange() {
     state.outputWidth = parseInt(elements.widthSelect.value);
     updateDimensionInfo();
-    updatePreview();
+    updateCssOutput();
 }
 
 // Update dimension info
@@ -195,47 +362,68 @@ function handleQualityChange() {
     elements.qualityValue.textContent = `${elements.qualitySlider.value}%`;
 }
 
-// Handle canvas click (place focal point)
-function handleCanvasClick(event) {
-    if (state.isDraggingFocal || state.isDraggingCorner) return;
+// Start dragging image (panning)
+function startImageDrag(event) {
+    if (state.isDraggingCorner) return;
+    state.isDraggingImage = true;
+    state.dragStart = { x: event.clientX, y: event.clientY };
+    state.dragStartOffset = { ...state.imageOffset };
+    event.preventDefault();
+}
+
+// Handle wheel (zooming)
+function handleWheel(event) {
+    event.preventDefault();
     
     const canvas = elements.previewCanvas;
     const rect = canvas.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
+    // Convert mouse position to canvas coordinates (account for devicePixelRatio)
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const mouseX = (event.clientX - rect.left) * (canvas.width / rect.width);
+    const mouseY = (event.clientY - rect.top) * (canvas.height / rect.height);
     
-    // Convert click position in preview canvas to source image coordinates
-    const cropInfo = calculateCropArea();
+    // Zoom factor
+    const zoomFactor = event.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = state.imageScale * zoomFactor;
     
-    // Click position relative to preview canvas (0 to canvas.width/height)
-    const relativeX = clickX / canvas.width;
-    const relativeY = clickY / canvas.height;
+    // Get minimum scale - never zoom below this
+    const minScale = getMinimumScale();
     
-    // Convert to source image coordinates
-    const sourceX = cropInfo.sourceX + (relativeX * cropInfo.sourceWidth);
-    const sourceY = cropInfo.sourceY + (relativeY * cropInfo.sourceHeight);
+    // Clamp scale - minimum to ensure crop is always covered, max 5x minimum
+    const clampedScale = Math.max(minScale, Math.min(newScale, minScale * 5));
     
-    // Clamp to image bounds
-    const img = state.sourceImage;
-    state.focalPoint = {
-        x: Math.max(0, Math.min(img.width, sourceX)),
-        y: Math.max(0, Math.min(img.height, sourceY))
-    };
+    // If scale didn't change (hit limit), don't update
+    if (clampedScale === state.imageScale) return;
     
-    updateFocalPointMarker();
+    // Zoom towards mouse position
+    const cropRect = getCropRect();
+    const scaleChange = clampedScale / state.imageScale;
+    
+    // Mouse position relative to crop center (convert from canvas pixels to crop coordinates)
+    const cropCenterX = cropRect.width / 2;
+    const cropCenterY = cropRect.height / 2;
+    const mouseCropX = mouseX / devicePixelRatio;
+    const mouseCropY = mouseY / devicePixelRatio;
+    
+    // Current image center in crop coordinates
+    const imageCenterX = cropCenterX + state.imageOffset.x;
+    const imageCenterY = cropCenterY + state.imageOffset.y;
+    
+    // Vector from image center to mouse
+    const deltaX = mouseCropX - imageCenterX;
+    const deltaY = mouseCropY - imageCenterY;
+    
+    // Adjust offset to zoom towards mouse (scale the delta)
+    state.imageOffset.x -= deltaX * (1 - scaleChange);
+    state.imageOffset.y -= deltaY * (1 - scaleChange);
+    
+    state.imageScale = clampedScale;
+    
+    // Constrain after zoom to ensure crop is still covered
+    constrainImagePosition();
+    
     updatePreview();
     updateCssOutput();
-}
-
-// Start dragging focal point
-function startFocalDrag(event) {
-    event.stopPropagation();
-    state.isDraggingFocal = true;
-    const rect = elements.focalPointMarker.getBoundingClientRect();
-    state.dragOffset = {
-        x: event.clientX - (rect.left + rect.width / 2),
-        y: event.clientY - (rect.top + rect.height / 2)
-    };
 }
 
 // Start dragging corner (custom aspect ratio)
@@ -253,31 +441,16 @@ function startCornerDrag(event) {
 
 // Handle mouse move
 function handleMouseMove(event) {
-    if (state.isDraggingFocal) {
-        const canvas = elements.previewCanvas;
-        const rect = canvas.getBoundingClientRect();
-        let x = event.clientX - rect.left - state.dragOffset.x;
-        let y = event.clientY - rect.top - state.dragOffset.y;
+    if (state.isDraggingImage) {
+        const deltaX = event.clientX - state.dragStart.x;
+        const deltaY = event.clientY - state.dragStart.y;
         
-        // Convert preview canvas coordinates to source image coordinates
-        const cropInfo = calculateCropArea();
+        state.imageOffset.x = state.dragStartOffset.x + deltaX;
+        state.imageOffset.y = state.dragStartOffset.y + deltaY;
         
-        // Position relative to preview canvas
-        const relativeX = x / canvas.width;
-        const relativeY = y / canvas.height;
+        // Constrain image to stay within reasonable bounds
+        constrainImagePosition();
         
-        // Convert to source image coordinates
-        const sourceX = cropInfo.sourceX + (relativeX * cropInfo.sourceWidth);
-        const sourceY = cropInfo.sourceY + (relativeY * cropInfo.sourceHeight);
-        
-        // Clamp to image bounds
-        const img = state.sourceImage;
-        state.focalPoint = {
-            x: Math.max(0, Math.min(img.width, sourceX)),
-            y: Math.max(0, Math.min(img.height, sourceY))
-        };
-        
-        updateFocalPointMarker();
         updatePreview();
         updateCssOutput();
     } else if (state.isDraggingCorner && state.customRatioStart) {
@@ -299,52 +472,84 @@ function handleMouseMove(event) {
         // Update active preset buttons
         elements.presetButtons.forEach(btn => btn.classList.remove('active'));
         
+        // Reinitialize image position for new aspect ratio
+        if (state.sourceImage) {
+            updatePreviewCanvasSize();
+            initializeImagePosition();
+        }
+        
         updateDimensionInfo();
         updatePreview();
+        updateCssOutput();
     }
 }
 
 // Handle mouse up
 function handleMouseUp() {
-    state.isDraggingFocal = false;
+    state.isDraggingImage = false;
     state.isDraggingCorner = false;
 }
 
-// Update focal point marker position
-function updateFocalPointMarker() {
-    if (!state.focalPoint) {
-        elements.focalPointMarker.style.display = 'none';
-        return;
+// Constrain image position to ensure crop area is always covered (object-fit: cover)
+function constrainImagePosition() {
+    const img = state.sourceImage;
+    if (!img) return;
+    
+    const cropRect = getCropRect();
+    
+    // Calculate display dimensions (same logic as in updatePreview)
+    const imageAspect = img.width / img.height;
+    const cropAspect = cropRect.width / cropRect.height;
+    
+    let baseCoverScale;
+    if (imageAspect > cropAspect) {
+        baseCoverScale = cropRect.height / img.height;
+    } else {
+        baseCoverScale = cropRect.width / img.width;
     }
     
-    // Calculate where the focal point appears in the cropped preview
-    const cropInfo = calculateCropArea();
+    const totalScale = baseCoverScale * state.imageScale;
+    const displayWidth = img.width * totalScale;
+    const displayHeight = img.height * totalScale;
     
-    // Check if focal point is within the crop area
-    const isInCrop = state.focalPoint.x >= cropInfo.sourceX && 
-                     state.focalPoint.x <= cropInfo.sourceX + cropInfo.sourceWidth &&
-                     state.focalPoint.y >= cropInfo.sourceY && 
-                     state.focalPoint.y <= cropInfo.sourceY + cropInfo.sourceHeight;
+    // Crop center
+    const cropCenterX = cropRect.width / 2;
+    const cropCenterY = cropRect.height / 2;
     
-    if (!isInCrop) {
-        elements.focalPointMarker.style.display = 'none';
-        return;
+    // Image center position (relative to crop center)
+    const imageCenterX = cropCenterX + state.imageOffset.x;
+    const imageCenterY = cropCenterY + state.imageOffset.y;
+    
+    // Calculate bounds to ensure crop area is always covered
+    const imageLeft = imageCenterX - displayWidth / 2;
+    const imageRight = imageCenterX + displayWidth / 2;
+    const imageTop = imageCenterY - displayHeight / 2;
+    const imageBottom = imageCenterY + displayHeight / 2;
+    
+    // Constrain so crop is always covered
+    let constrainedOffsetX = state.imageOffset.x;
+    let constrainedOffsetY = state.imageOffset.y;
+    
+    if (imageLeft > 0) {
+        // Image too far right, move left
+        constrainedOffsetX -= (imageLeft - 0);
+    } else if (imageRight < cropRect.width) {
+        // Image too far left, move right
+        constrainedOffsetX += (cropRect.width - imageRight);
     }
     
-    // Convert source coordinates to preview canvas coordinates
-    // Focal point position relative to crop area
-    const relativeX = state.focalPoint.x - cropInfo.sourceX;
-    const relativeY = state.focalPoint.y - cropInfo.sourceY;
+    if (imageTop > 0) {
+        // Image too far down, move up
+        constrainedOffsetY -= (imageTop - 0);
+    } else if (imageBottom < cropRect.height) {
+        // Image too far up, move down
+        constrainedOffsetY += (cropRect.height - imageBottom);
+    }
     
-    // Scale to preview canvas size
-    const canvas = elements.previewCanvas;
-    const previewX = (relativeX / cropInfo.sourceWidth) * canvas.width;
-    const previewY = (relativeY / cropInfo.sourceHeight) * canvas.height;
-    
-    elements.focalPointMarker.style.display = 'block';
-    elements.focalPointMarker.style.left = `${previewX}px`;
-    elements.focalPointMarker.style.top = `${previewY}px`;
+    state.imageOffset.x = constrainedOffsetX;
+    state.imageOffset.y = constrainedOffsetY;
 }
+
 
 // Update preview
 function updatePreview() {
@@ -353,107 +558,179 @@ function updatePreview() {
     const img = state.sourceImage;
     const ctx = state.previewCtx;
     const canvas = elements.previewCanvas;
+    const cropRect = getCropRect();
+    const devicePixelRatio = window.devicePixelRatio || 1;
     
-    // Calculate crop area based on aspect ratio and focal point
-    const cropInfo = calculateCropArea();
+    // Clear canvas (context is already scaled, so use CSS pixel dimensions)
+    ctx.clearRect(0, 0, cropRect.width, cropRect.height);
     
-    // Calculate preview dimensions maintaining aspect ratio
-    // Use the crop dimensions scaled by the scale factor
-    const targetAspect = state.aspectRatio.width / state.aspectRatio.height;
-    const maxPreviewWidth = 1920;
+    // Calculate display dimensions for object-fit: cover behavior
+    // Scale the image so one dimension matches crop exactly, the other overflows
+    const imageAspect = img.width / img.height;
+    const cropAspect = cropRect.width / cropRect.height;
     
-    // Calculate preview size based on crop area, but cap at max width
-    let previewWidth = cropInfo.sourceWidth * state.scaleFactor;
-    let previewHeight = cropInfo.sourceHeight * state.scaleFactor;
-    
-    if (previewWidth > maxPreviewWidth) {
-        previewWidth = maxPreviewWidth;
-        previewHeight = previewWidth / targetAspect;
+    // Calculate the scale needed so image covers crop (at imageScale = 1.0)
+    let baseCoverScale;
+    if (imageAspect > cropAspect) {
+        // Image wider - scale so height matches crop height exactly
+        baseCoverScale = cropRect.height / img.height;
+    } else {
+        // Image taller - scale so width matches crop width exactly
+        baseCoverScale = cropRect.width / img.width;
     }
     
-    // Update canvas size if it changed
-    if (canvas.width !== previewWidth || canvas.height !== previewHeight) {
-        canvas.width = previewWidth;
-        canvas.height = previewHeight;
-        canvas.style.width = `${previewWidth}px`;
-        canvas.style.height = `${previewHeight}px`;
-    }
+    // Apply the user's zoom scale on top of the base cover scale
+    const totalScale = baseCoverScale * state.imageScale;
     
-    // Clear and draw
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Calculate final display dimensions (in CSS pixels)
+    const displayWidth = img.width * totalScale;
+    const displayHeight = img.height * totalScale;
     
-    // Draw the cropped image section
+    // Calculate image position (centered in crop rect, then offset) - in CSS pixels
+    // Round to avoid sub-pixel rendering artifacts
+    const imageX = Math.round((cropRect.width / 2) - (displayWidth / 2) + state.imageOffset.x);
+    const imageY = Math.round((cropRect.height / 2) - (displayHeight / 2) + state.imageOffset.y);
+    const displayWidthRounded = Math.round(displayWidth);
+    const displayHeightRounded = Math.round(displayHeight);
+    
+    // Draw image (context is already scaled, so use CSS pixel coordinates)
+    // Use rounded coordinates to avoid sub-pixel rendering
     ctx.drawImage(
         img,
-        cropInfo.sourceX, cropInfo.sourceY, cropInfo.sourceWidth, cropInfo.sourceHeight,
-        0, 0, previewWidth, previewHeight
+        imageX, 
+        imageY, 
+        displayWidthRounded, 
+        displayHeightRounded
     );
     
-    // Update crop overlay (hidden, but resize handle uses it)
-    updateCropOverlay(cropInfo);
+    // Draw crop rectangle overlay (border) - use CSS pixel coordinates
+    // Round coordinates to avoid sub-pixel rendering artifacts
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(Math.round(0), Math.round(0), Math.round(cropRect.width), Math.round(cropRect.height));
+    ctx.setLineDash([]);
     
-    // Update focal point marker
-    updateFocalPointMarker();
+    // Update resize handle
+    updateResizeHandle();
 }
 
-// Calculate crop area based on aspect ratio and focal point
-function calculateCropArea() {
+// Calculate what portion of source image is visible in crop rectangle
+function calculateVisibleCropArea() {
     const img = state.sourceImage;
-    const targetAspect = state.aspectRatio.width / state.aspectRatio.height;
+    const cropRect = getCropRect();
+    
+    // Calculate display dimensions (same logic as updatePreview)
     const imageAspect = img.width / img.height;
+    const cropAspect = cropRect.width / cropRect.height;
     
-    let sourceWidth, sourceHeight, sourceX, sourceY;
-    
-    // Default focal point to center if not set
-    const focalX = state.focalPoint ? state.focalPoint.x : img.width / 2;
-    const focalY = state.focalPoint ? state.focalPoint.y : img.height / 2;
-    
-    if (imageAspect > targetAspect) {
-        // Image is wider than target - crop width
-        sourceHeight = img.height;
-        sourceWidth = sourceHeight * targetAspect;
-        
-        // Position based on focal point
-        sourceX = Math.max(0, Math.min(img.width - sourceWidth, focalX - sourceWidth / 2));
-        sourceY = 0;
+    let baseCoverScale;
+    if (imageAspect > cropAspect) {
+        baseCoverScale = cropRect.height / img.height;
     } else {
-        // Image is taller than target - crop height
-        sourceWidth = img.width;
-        sourceHeight = sourceWidth / targetAspect;
-        
-        // Position based on focal point
-        sourceX = 0;
-        sourceY = Math.max(0, Math.min(img.height - sourceHeight, focalY - sourceHeight / 2));
+        baseCoverScale = cropRect.width / img.width;
     }
     
-    return { sourceX, sourceY, sourceWidth, sourceHeight };
+    const totalScale = baseCoverScale * state.imageScale;
+    const displayWidth = img.width * totalScale;
+    const displayHeight = img.height * totalScale;
+    
+    // Image position in crop rectangle coordinates
+    const imageX = (cropRect.width / 2) - (displayWidth / 2) + state.imageOffset.x;
+    const imageY = (cropRect.height / 2) - (displayHeight / 2) + state.imageOffset.y;
+    
+    // The crop rectangle is the entire canvas (0, 0, cropRect.width, cropRect.height)
+    // We need to map this rectangle to source image coordinates
+    
+    // The crop rectangle corners in crop coordinates:
+    // Top-left: (0, 0)
+    // Bottom-right: (cropRect.width, cropRect.height)
+    
+    // Convert these corners to image-relative coordinates
+    // Top-left corner of crop in image coordinates
+    const cropTopLeftX = 0 - imageX;
+    const cropTopLeftY = 0 - imageY;
+    
+    // Bottom-right corner of crop in image coordinates
+    const cropBottomRightX = cropRect.width - imageX;
+    const cropBottomRightY = cropRect.height - imageY;
+    
+    // Convert to source image coordinates (0 to img.width/height)
+    const sourceX = (cropTopLeftX / displayWidth) * img.width;
+    const sourceY = (cropTopLeftY / displayHeight) * img.height;
+    const sourceWidth = ((cropBottomRightX - cropTopLeftX) / displayWidth) * img.width;
+    const sourceHeight = ((cropBottomRightY - cropTopLeftY) / displayHeight) * img.height;
+    
+    return {
+        sourceX: Math.max(0, Math.min(img.width, sourceX)),
+        sourceY: Math.max(0, Math.min(img.height, sourceY)),
+        sourceWidth: Math.max(0, Math.min(img.width - sourceX, sourceWidth)),
+        sourceHeight: Math.max(0, Math.min(img.height - sourceY, sourceHeight))
+    };
 }
 
-// Update crop overlay
-function updateCropOverlay(cropInfo) {
-    // The overlay is hidden by default - the preview canvas itself shows the crop
-    // But we can show it for debugging or as a reference
-    const overlay = elements.cropOverlay;
-    overlay.style.display = 'none'; // Hide overlay - preview canvas shows the crop
+// Calculate object-position percentage based on current image position
+function calculateObjectPosition() {
+    const img = state.sourceImage;
+    const cropRect = getCropRect();
     
-    // Position resize handle at bottom-right corner of preview canvas
+    // Calculate display dimensions (same logic as updatePreview)
+    const imageAspect = img.width / img.height;
+    const cropAspect = cropRect.width / cropRect.height;
+    
+    let baseCoverScale;
+    if (imageAspect > cropAspect) {
+        baseCoverScale = cropRect.height / img.height;
+    } else {
+        baseCoverScale = cropRect.width / img.width;
+    }
+    
+    const totalScale = baseCoverScale * state.imageScale;
+    const displayWidth = img.width * totalScale;
+    const displayHeight = img.height * totalScale;
+    
+    const imageX = (cropRect.width / 2) - (displayWidth / 2) + state.imageOffset.x;
+    const imageY = (cropRect.height / 2) - (displayHeight / 2) + state.imageOffset.y;
+    
+    // Center of crop rect in image coordinates
+    const cropCenterX = cropRect.width / 2;
+    const cropCenterY = cropRect.height / 2;
+    
+    // Convert to image-relative coordinates
+    const imageRelX = cropCenterX - imageX;
+    const imageRelY = cropCenterY - imageY;
+    
+    // Convert to percentage of source image
+    const xPercent = (imageRelX / displayWidth) * 100;
+    const yPercent = (imageRelY / displayHeight) * 100;
+    
+    return {
+        x: Math.max(0, Math.min(100, xPercent)),
+        y: Math.max(0, Math.min(100, yPercent))
+    };
+}
+
+// Update resize handle position
+function updateResizeHandle() {
     const canvas = elements.previewCanvas;
-    elements.resizeHandle.style.display = 'block';
-    const rect = canvas.getBoundingClientRect();
-    const containerRect = canvas.parentElement.getBoundingClientRect();
-    elements.resizeHandle.style.left = `${rect.width - 10}px`;
-    elements.resizeHandle.style.top = `${rect.height - 10}px`;
+    if (state.isCustomRatio) {
+        elements.resizeHandle.style.display = 'block';
+        elements.resizeHandle.style.left = `${canvas.width - 10}px`;
+        elements.resizeHandle.style.top = `${canvas.height - 10}px`;
+    } else {
+        elements.resizeHandle.style.display = 'none';
+    }
 }
 
 // Update CSS output
 function updateCssOutput() {
-    if (!state.focalPoint || !state.sourceImage) {
+    if (!state.sourceImage) {
         return;
     }
     
-    const img = state.sourceImage;
-    const xPercent = ((state.focalPoint.x / img.width) * 100).toFixed(2);
-    const yPercent = ((state.focalPoint.y / img.height) * 100).toFixed(2);
+    const pos = calculateObjectPosition();
+    const xPercent = pos.x.toFixed(2);
+    const yPercent = pos.y.toFixed(2);
     
     const css = `object-fit: cover;
 object-position: ${xPercent}% ${yPercent}%;`;
@@ -496,13 +773,44 @@ async function handleExport() {
         exportCanvas.height = outputHeight;
         const exportCtx = exportCanvas.getContext('2d');
         
-        // Calculate crop area in full source image coordinates
-        const cropInfo = calculateCropArea();
+        // Calculate visible crop area in full source image coordinates
+        const cropInfo = calculateVisibleCropArea();
         
-        // Draw from full source image to export canvas
+        // Calculate the aspect ratio of the crop area vs the source crop
+        const cropAspect = state.aspectRatio.width / state.aspectRatio.height;
+        const sourceCropAspect = cropInfo.sourceWidth / cropInfo.sourceHeight;
+        
+        // Determine how to crop: always crop, never stretch
+        let exportSourceX = cropInfo.sourceX;
+        let exportSourceY = cropInfo.sourceY;
+        let exportSourceWidth = cropInfo.sourceWidth;
+        let exportSourceHeight = cropInfo.sourceHeight;
+        
+        if (sourceCropAspect > cropAspect) {
+            // Source crop is wider than target - crop width (keep full height)
+            exportSourceHeight = cropInfo.sourceHeight;
+            exportSourceWidth = exportSourceHeight * cropAspect;
+            // Keep the same top position - don't re-center, preserve user's positioning
+            // The sourceX is already positioned correctly by the user in the preview
+        } else {
+            // Source crop is taller than target - crop height (keep full width)
+            exportSourceWidth = cropInfo.sourceWidth;
+            exportSourceHeight = exportSourceWidth / cropAspect;
+            // Keep the same left position - don't re-center, preserve user's positioning
+            // The sourceY is already positioned correctly by the user in the preview
+        }
+        
+        // Clamp to image bounds and round to integers to avoid sub-pixel rendering
+        exportSourceX = Math.round(Math.max(0, Math.min(state.sourceImage.width - exportSourceWidth, exportSourceX)));
+        exportSourceY = Math.round(Math.max(0, Math.min(state.sourceImage.height - exportSourceHeight, exportSourceY)));
+        exportSourceWidth = Math.round(Math.min(exportSourceWidth, state.sourceImage.width - exportSourceX));
+        exportSourceHeight = Math.round(Math.min(exportSourceHeight, state.sourceImage.height - exportSourceY));
+        
+        // Draw from full source image to export canvas (always crop, never stretch)
+        // Use integer coordinates for crisp rendering
         exportCtx.drawImage(
             state.sourceImage,
-            cropInfo.sourceX, cropInfo.sourceY, cropInfo.sourceWidth, cropInfo.sourceHeight,
+            exportSourceX, exportSourceY, exportSourceWidth, exportSourceHeight,
             0, 0, state.outputWidth, outputHeight
         );
         

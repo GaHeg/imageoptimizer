@@ -206,13 +206,20 @@ select:focus {
     border-radius: 8px;
     overflow: hidden;
     background: #000;
-    cursor: crosshair;
+    cursor: grab;
+    /* Prevent sub-pixel rendering artifacts */
+    transform: translateZ(0);
+    -webkit-font-smoothing: antialiased;
+}
+
+.preview-container:active {
+    cursor: grabbing;
 }
 
 #previewCanvas {
     display: block;
-    max-width: 100%;
-    height: auto;
+    /* Aspect ratio is maintained by fixed width/height in JS */
+    /* Don't use max-width or height: auto as it breaks aspect ratio */
 }
 
 .focal-point-marker {
