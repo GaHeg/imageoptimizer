@@ -24,10 +24,9 @@ const elements = {
     controlsSection: document.getElementById('controlsSection'),
     previewSection: document.getElementById('previewSection'),
     outputSection: document.getElementById('outputSection'),
-    exportSection: document.getElementById('exportSection'),
     previewCanvas: document.getElementById('previewCanvas'),
     resizeHandle: document.getElementById('resizeHandle'),
-    presetButtons: document.querySelectorAll('.preset-btn'),
+    aspectRatioSelect: document.getElementById('aspectRatioSelect'),
     widthSelect: document.getElementById('widthSelect'),
     dimensionInfo: document.getElementById('dimensionInfo'),
     formatSelect: document.getElementById('formatSelect'),
@@ -51,8 +50,8 @@ function init() {
 
     // Event listeners
     elements.imageInput.addEventListener('change', handleImageUpload);
-    elements.presetButtons.forEach(btn => {
-        btn.addEventListener('click', () => handleAspectRatioPreset(btn.dataset.ratio));
+    elements.aspectRatioSelect.addEventListener('change', () => {
+        handleAspectRatioPreset(elements.aspectRatioSelect.value);
     });
     elements.widthSelect.addEventListener('change', handleWidthChange);
     elements.formatSelect.addEventListener('change', handleFormatChange);
@@ -122,13 +121,13 @@ async function handleImageUpload(event) {
             
             // Detect and set aspect ratio to match image
             detectAndSetImageAspectRatio(img);
+            syncOutputWidthOptions();
             
             setupPreviewCanvas();
             initializeImagePosition();
             elements.controlsSection.style.display = 'block';
             elements.previewSection.style.display = 'block';
             elements.outputSection.style.display = 'block';
-            elements.exportSection.style.display = 'block';
             updatePreview();
             updateCssOutput();
         };
@@ -162,9 +161,23 @@ function setupPreviewCanvas() {
 function updatePreviewCanvasSize() {
     const targetAspect = state.aspectRatio.width / state.aspectRatio.height;
     
-    // Get container width to make it responsive but maintain aspect ratio
-    const container = elements.previewCanvas.parentElement;
-    const containerWidth = Math.min(container.clientWidth || 1920, 1920);
+    // Get available width - use preview-section to get full available space
+    // This prevents the canvas from being constrained by its previous size
+    let containerWidth;
+    
+    if (elements.previewSection && elements.previewSection.offsetWidth > 0) {
+        // Use preview-section width (full section width)
+        containerWidth = elements.previewSection.offsetWidth;
+    } else {
+        // Fallback to viewport width if section not available
+        containerWidth = window.innerWidth - 40; // Account for padding
+    }
+    
+    // Ensure we have a reasonable minimum width
+    if (containerWidth < 300) {
+        containerWidth = Math.max(window.innerWidth - 40, 300);
+    }
+    
     const maxPreviewWidth = containerWidth - 20; // Account for padding/border
     
     // Calculate dimensions maintaining aspect ratio
@@ -327,10 +340,8 @@ function detectAndSetImageAspectRatio(img) {
         state.aspectRatio = { width: closestPreset.width, height: closestPreset.height };
         state.isCustomRatio = false;
         
-        // Highlight the matching button
-        elements.presetButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.ratio === closestPreset.ratio);
-        });
+        // Set dropdown to matching preset
+        elements.aspectRatioSelect.value = closestPreset.ratio;
     } else {
         // Use image's actual aspect ratio as custom
         // Simplify to a reasonable ratio (find greatest common divisor approximation)
@@ -338,8 +349,8 @@ function detectAndSetImageAspectRatio(img) {
         state.aspectRatio = { width: simplified.width, height: simplified.height };
         state.isCustomRatio = true;
         
-        // Clear all preset highlights
-        elements.presetButtons.forEach(btn => btn.classList.remove('active'));
+        // Clear dropdown selection (custom ratio)
+        elements.aspectRatioSelect.value = '';
     }
 }
 
@@ -369,18 +380,14 @@ function simplifyRatio(width, height) {
 
 // Handle aspect ratio preset
 function handleAspectRatioPreset(ratioString) {
+    if (!ratioString) return; // Skip if empty (custom ratio)
+    
     const [w, h] = ratioString.split(':').map(Number);
     state.aspectRatio = { width: w, height: h };
     state.isCustomRatio = false;
     
-    // Update active button - highlight selected, remove highlight from others
-    elements.presetButtons.forEach(btn => {
-        if (btn.dataset.ratio === ratioString) {
-            btn.classList.add('active');
-        } else {
-            btn.classList.remove('active');
-        }
-    });
+    // Update dropdown selection
+    elements.aspectRatioSelect.value = ratioString;
     
     // Reinitialize image position for new aspect ratio
     if (state.sourceImage) {
@@ -398,7 +405,8 @@ function handleAspectRatioPreset(ratioString) {
 
 // Handle width change
 function handleWidthChange() {
-    state.outputWidth = parseInt(elements.widthSelect.value);
+    state.outputWidth = clampOutputWidth(parseInt(elements.widthSelect.value, 10));
+    elements.widthSelect.value = String(state.outputWidth);
     
     // Recalculate max scale and clamp current scale if needed
     if (state.sourceImage) {
@@ -415,6 +423,55 @@ function handleWidthChange() {
 function updateDimensionInfo() {
     const height = Math.round((state.outputWidth * state.aspectRatio.height) / state.aspectRatio.width);
     elements.dimensionInfo.textContent = `Height: ${height}px`;
+}
+
+function clampOutputWidth(width) {
+    if (!state.sourceImage || !Number.isFinite(width)) {
+        return width;
+    }
+
+    return Math.min(width, state.sourceImage.width);
+}
+
+function syncOutputWidthOptions() {
+    if (!state.sourceImage) return;
+
+    const sourceWidth = state.sourceImage.width;
+    const select = elements.widthSelect;
+
+    Array.from(select.options).forEach((option) => {
+        if (option.dataset.dynamicInputSize === 'true') {
+            option.remove();
+            return;
+        }
+
+        const optionWidth = parseInt(option.value, 10);
+        option.disabled = optionWidth > sourceWidth;
+    });
+
+    const enabledValues = Array.from(select.options)
+        .map((option) => parseInt(option.value, 10))
+        .filter((value) => Number.isFinite(value) && value <= sourceWidth);
+
+    if (enabledValues.length === 0) {
+        const customOption = document.createElement('option');
+        customOption.value = String(sourceWidth);
+        customOption.textContent = `${sourceWidth}px (input max)`;
+        customOption.dataset.dynamicInputSize = 'true';
+        select.appendChild(customOption);
+        select.value = String(sourceWidth);
+        state.outputWidth = sourceWidth;
+    } else {
+        const currentSelection = clampOutputWidth(parseInt(select.value, 10));
+        const selectedWidth = enabledValues.includes(currentSelection)
+            ? currentSelection
+            : Math.max(...enabledValues);
+
+        select.value = String(selectedWidth);
+        state.outputWidth = selectedWidth;
+    }
+
+    updateDimensionInfo();
 }
 
 // Handle format change
@@ -536,8 +593,8 @@ function handleMouseMove(event) {
         state.aspectRatio = { width: ratio, height: 1 };
         state.isCustomRatio = true;
         
-        // Update active preset buttons
-        elements.presetButtons.forEach(btn => btn.classList.remove('active'));
+        // Clear dropdown (custom ratio)
+        elements.aspectRatioSelect.value = '';
         
         // Reinitialize image position for new aspect ratio
         if (state.sourceImage) {
@@ -835,6 +892,8 @@ async function handleExport() {
     
     try {
         // Calculate output dimensions
+        state.outputWidth = clampOutputWidth(state.outputWidth);
+        elements.widthSelect.value = String(state.outputWidth);
         const outputHeight = Math.round((state.outputWidth * state.aspectRatio.height) / state.aspectRatio.width);
         
         // Create export canvas at full resolution

@@ -3,98 +3,92 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSS Target Practice - Image Rescale & Crop Tool</title>
+    <title>Image Rescale & Crop Tool</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>CSS Target Practice</h1>
-            <p class="subtitle">Rescale, crop, and get object-position CSS values for your images</p>
+            <h1>Rescale and crop</h1>
+            <p class="subtitle">Resize and crop images in browser, no image data is stored on the server</p>
         </header>
 
         <main>
-            <!-- Upload Section -->
-            <section class="upload-section">
-                <label for="imageInput" class="upload-label">
-                    <span class="upload-icon">📁</span>
-                    <span>Upload Image</span>
-                    <input type="file" id="imageInput" accept="image/*" hidden>
-                </label>
-                <div id="heicWarning" class="warning-message" style="display: none;">
-                    <strong>HEIC Format Detected:</strong> This format isn't supported in browsers. 
-                    <a href="#iphone-guide">See iPhone guide below</a> to convert to JPEG/PNG.
-                </div>
-            </section>
+            <!-- Upload and Controls Container -->
+            <div class="upload-controls-wrapper">
+                <!-- Upload Section -->
+                <section class="upload-section">
+                    <label for="imageInput" class="upload-label">
+                        <span class="upload-icon">📁</span>
+                        <span>Upload Image</span>
+                        <input type="file" id="imageInput" accept="image/*" hidden>
+                    </label>
+                    <div id="heicWarning" class="warning-message" style="display: none;">
+                        <strong>HEIC Format Detected:</strong> This format isn't supported in browsers. 
+                        <a href="#iphone-guide">See iPhone guide below</a> to convert to JPEG/PNG.
+                    </div>
+                </section>
 
-            <!-- Controls Section -->
-            <section class="controls-section" id="controlsSection" style="display: none;">
-                <!-- Aspect Ratio Selection -->
-                <div class="control-group">
-                    <label for="aspectRatio">Aspect Ratio:</label>
-                    <div class="aspect-ratio-controls">
-                        <div class="preset-buttons">
-                            <button class="preset-btn" data-ratio="21:9">Hero (21:9)</button>
-                            <button class="preset-btn" data-ratio="16:9">16:9</button>
-                            <button class="preset-btn" data-ratio="3:2">3:2</button>
-                            <button class="preset-btn" data-ratio="4:3">4:3</button>
-                            <button class="preset-btn" data-ratio="1:1">1:1</button>
-                            <button class="preset-btn" data-ratio="3:4">3:4</button>
-                            <button class="preset-btn" data-ratio="2:3">2:3</button>
-                        </div>
-                        <div class="custom-ratio-info">
-                            <span>Or drag the corner of the preview to create a custom ratio</span>
+                <!-- Controls Section -->
+                <section class="controls-section" id="controlsSection" style="display: none;">
+                    <div class="controls-row">
+                    <div class="control-item">
+                        <label for="aspectRatioSelect">Aspect Ratio:</label>
+                        <select id="aspectRatioSelect">
+                            <option value="">Custom</option>
+                            <option value="21:9">Hero (21:9)</option>
+                            <option value="16:9" selected>16:9</option>
+                            <option value="3:2">3:2</option>
+                            <option value="4:3">4:3</option>
+                            <option value="1:1">1:1</option>
+                            <option value="3:4">3:4</option>
+                            <option value="2:3">2:3</option>
+                        </select>
+                    </div>
+
+                    <div class="control-item">
+                        <label for="widthSelect">Output Width:</label>
+                        <select id="widthSelect">
+                            <option value="2560">2560px</option>
+                            <option value="1920" selected>1920px</option>
+                            <option value="1280">1280px</option>
+                            <option value="1024">1024px</option>
+                            <option value="800">800px</option>
+                            <option value="640">640px</option>
+                        </select>
+                        <span class="dimension-info" id="dimensionInfo">1080px</span>
+                    </div>
+
+                    <div class="control-item">
+                        <label for="formatSelect">Format:</label>
+                        <select id="formatSelect">
+                            <option value="image/jpeg" selected>JPEG</option>
+                            <option value="image/png">PNG</option>
+                            <option value="image/webp" id="webpOption">WebP</option>
+                        </select>
+                    </div>
+
+                    <div class="control-item" id="qualityGroup">
+                        <label for="qualitySlider">Quality:</label>
+                        <div class="slider-container">
+                            <input type="range" id="qualitySlider" min="0" max="100" value="70" step="1">
+                            <span id="qualityValue">70%</span>
                         </div>
                     </div>
                 </div>
-
-                <!-- Width Selection -->
-                <div class="control-group">
-                    <label for="widthSelect">Output Width:</label>
-                    <select id="widthSelect">
-                        <option value="2560">2560px</option>
-                        <option value="1920" selected>1920px</option>
-                        <option value="1280">1280px</option>
-                        <option value="1024">1024px</option>
-                        <option value="800">800px</option>
-                        <option value="640">640px</option>
-                    </select>
-                    <span class="dimension-info" id="dimensionInfo">Height: 1080px</span>
-                </div>
-
-                <!-- Export Format -->
-                <div class="control-group">
-                    <label for="formatSelect">Export Format:</label>
-                    <select id="formatSelect">
-                        <option value="image/jpeg" selected>JPEG</option>
-                        <option value="image/png">PNG</option>
-                        <option value="image/webp" id="webpOption">WebP</option>
-                    </select>
-                </div>
-
-                <!-- JPEG Quality (only shown for JPEG) -->
-                <div class="control-group" id="qualityGroup">
-                    <label for="qualitySlider">JPEG Quality:</label>
-                    <div class="slider-container">
-                        <input type="range" id="qualitySlider" min="0" max="100" value="85" step="1">
-                        <span id="qualityValue">85%</span>
-                    </div>
-                </div>
+                
+             
 
                 <!-- Instructions -->
-                <div class="instructions">
-                    <p><strong>How to use:</strong></p>
-                    <ol>
-                        <li>Drag the image to pan and position it within the crop rectangle</li>
-                        <li>Use mouse wheel to zoom in/out</li>
-                        <li>The CSS object-position values update automatically</li>
-                        <li>Click "Export Image" when ready to download</li>
-                    </ol>
-                </div>
-            </section>
+               
+                </section>
+            </div>
 
             <!-- Preview Section -->
             <section class="preview-section" id="previewSection" style="display: none;">
+                <div class="instructions">
+                    <p><strong>How to use:</strong> Drag to pan • Mouse wheel to zoom • CSS updates automatically</p>
+                </div>
                 <div class="preview-container">
                     <canvas id="previewCanvas"></canvas>
                     <div id="focalPointMarker" class="focal-point-marker" style="display: none;"></div>
@@ -106,19 +100,17 @@
                 </div>
             </section>
 
-            <!-- CSS Output Section -->
+            <!-- CSS Output and Export Section -->
             <section class="output-section" id="outputSection" style="display: none;">
-                <h2>CSS Output</h2>
-                <div class="css-output-container">
-                    <pre id="cssOutput"><code>object-fit: cover;
+                <div class="output-row">
+                    <div class="css-output-item">
+                        <label>CSS:</label>
+                        <pre id="cssOutput"><code>object-fit: cover;
 object-position: 50% 50%;</code></pre>
+                    </div>
                     <button id="copyCssBtn" class="copy-btn">Copy CSS</button>
+                    <button id="exportBtn" class="export-btn">Export Image</button>
                 </div>
-            </section>
-
-            <!-- Export Section -->
-            <section class="export-section" id="exportSection" style="display: none;">
-                <button id="exportBtn" class="export-btn">Export Image</button>
             </section>
         </main>
 
@@ -127,14 +119,14 @@ object-position: 50% 50%;</code></pre>
             <h2>Using Images from iPhone</h2>
             <div class="guide-content">
                 <p>iPhones often save photos in HEIC format, which browsers don't support. Here's how to convert:</p>
-                <h3>Option 1: Convert from Photos App (Maintains original quality on device)</h3>
+                <h3>Option 1: Convert from Photos App (Maintains HEIC photo quality on device)</h3>
                 <ol>
                     <li>Open the <strong>Photos</strong> app</li>
                     <li>Select the photo you want to use</li>
                     <li>Tap the <strong>Share</strong> button</li>
                     <li>Choose <strong>Save as JPEG</strong> or share to a Mac and convert there</li>
                 </ol>
-                <h3>Option 2: Change Camera Settings (Saves images as JPEG on device)</h3>
+                <h3>Option 2: Change Camera Settings (Saves photos as JPEG on device)</h3>
                 <ol>
                     <li>Open <strong>Settings</strong> on your iPhone</li>
                     <li>Go to <strong>Camera</strong> → <strong>Formats</strong></li>
