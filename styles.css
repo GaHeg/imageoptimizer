@@ -7,11 +7,11 @@
 :root {
     --primary-color: #2563eb;
     --primary-hover: #1d4ed8;
-    --text-color: #1f2937;
-    --text-light: #6b7280;
-    --bg-color: #ffffff;
-    --bg-light: #f9fafb;
-    --border-color: #e5e7eb;
+    --text-color: #dfdfdf;
+    --text-light: #bfbfbf;
+    --bg-color: #282828;
+    --bg-light: #525252;
+    --border-color: #373737;
     --success-color: #10b981;
     --warning-color: #f59e0b;
     --error-color: #ef4444;
@@ -25,51 +25,71 @@ body {
 }
 
 .container {
-    max-width: 1200px;
+    
     margin: 0 auto;
-    padding: 2rem;
+    padding: 0.5rem;
 }
 
 header {
-    text-align: center;
-    margin-bottom: 3rem;
+    text-align: left;
+    margin-top: 0rem;
+    margin-bottom: 0rem;
 }
 
 h1 {
-    font-size: 2.5rem;
-    margin-bottom: 0.5rem;
+    font-size: 1.4rem;
+    margin-bottom: 0rem;
     color: var(--text-color);
 }
 
 .subtitle {
     color: var(--text-light);
-    font-size: 1.1rem;
+    font-size: 1rem;
+    margin-top: -0.4rem;
 }
 
 section {
     background: var(--bg-color);
-    border-radius: 8px;
-    padding: 2rem;
-    margin-bottom: 2rem;
+    border-radius: 4px;
+    padding: 0.25rem;
+    margin-bottom: 0rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Upload and Controls Wrapper */
+.upload-controls-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0rem;
 }
 
 /* Upload Section */
 .upload-section {
-    text-align: center;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    flex-shrink: 0;
+}
+
+.upload-section .upload-label {
+    margin: 0;
 }
 
 .upload-label {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 1rem 2rem;
+    padding: 0.25rem 0.5rem;
     background: var(--primary-color);
     color: white;
-    border-radius: 8px;
+    border-radius: 3px;
     cursor: pointer;
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     transition: background-color 0.2s;
+    white-space: nowrap;
 }
 
 .upload-label:hover {
@@ -77,16 +97,17 @@ section {
 }
 
 .upload-icon {
-    font-size: 1.5rem;
+    font-size: 1rem;
 }
 
 .warning-message {
-    margin-top: 1rem;
+    width: 100%;
     padding: 1rem;
     background: #fef3c7;
     border: 1px solid var(--warning-color);
     border-radius: 6px;
     color: var(--text-color);
+    margin-top: 0;
 }
 
 .warning-message a {
@@ -95,59 +116,49 @@ section {
 }
 
 /* Controls Section */
-.control-group {
-    margin-bottom: 1.5rem;
+.controls-section {
+    flex: 1;
+    min-width: 0;
 }
 
-.control-group label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 600;
-    color: var(--text-color);
-}
-
-.preset-buttons {
+.controls-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0rem;
 }
 
-.preset-btn {
-    padding: 0.5rem 1rem;
-    background: var(--bg-light);
-    border: 2px solid var(--border-color);
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: all 0.2s;
+.control-item {
+    display: flex;
+    flex-direction: row;
+    gap: 0.25rem;
+    flex-shrink: 0;
 }
 
-.preset-btn:hover {
-    border-color: var(--primary-color);
-    background: #eff6ff;
-}
-
-.preset-btn.active {
-    background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+.control-item label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-color);
+    white-space: nowrap;
 }
 
 .custom-ratio-info {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: var(--text-light);
     font-style: italic;
+    margin-top: 0.5rem;
 }
 
 select {
-    padding: 0.5rem 1rem;
+    padding: 0.25rem 0.5rem;
     border: 2px solid var(--border-color);
-    border-radius: 6px;
-    font-size: 1rem;
+    border-radius: 3px;
+    font-size: 0.9rem;
     background: var(--bg-color);
     cursor: pointer;
-    min-width: 150px;
+    min-width: 120px;
+    color: #ffffff;
 }
 
 select:focus {
@@ -156,42 +167,41 @@ select:focus {
 }
 
 .dimension-info {
-    margin-left: 1rem;
+    margin-left: 0.5rem;
     color: var(--text-light);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    white-space: nowrap;
 }
 
 .slider-container {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.5rem;
+    min-width: 150px;
 }
 
 #qualitySlider {
     flex: 1;
-    max-width: 300px;
+    min-width: 100px;
 }
 
 #qualityValue {
-    min-width: 50px;
+    min-width: 40px;
     text-align: right;
     font-weight: 600;
+    font-size: 0.9rem;
 }
 
 .instructions {
     background: var(--bg-light);
-    padding: 1rem;
+    padding: 0rem 0rem;
     border-radius: 6px;
-    margin-top: 1.5rem;
+    margin-top: 0rem;
+    font-size: 0.9rem;
 }
 
-.instructions ol {
-    margin-left: 1.5rem;
-    margin-top: 0.5rem;
-}
-
-.instructions li {
-    margin-bottom: 0.25rem;
+.instructions p {
+    margin: 0;
 }
 
 /* Preview Section */
@@ -279,37 +289,50 @@ select:focus {
 }
 
 /* Output Section */
-.output-section h2 {
-    margin-bottom: 1rem;
-    font-size: 1.5rem;
+.output-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
 }
 
-.css-output-container {
+.css-output-item {
     display: flex;
-    gap: 1rem;
-    align-items: flex-start;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 200px;
+}
+
+.css-output-item label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-color);
+    white-space: nowrap;
 }
 
 #cssOutput {
     flex: 1;
     background: #1e293b;
     color: #e2e8f0;
-    padding: 1rem;
+    padding: 0.75rem 1rem;
     border-radius: 6px;
     font-family: 'Courier New', monospace;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     overflow-x: auto;
     margin: 0;
+    min-width: 200px;
 }
 
 .copy-btn {
-    padding: 0.75rem 1.5rem;
+    padding: 0.75rem 1.25rem;
     background: var(--success-color);
     color: white;
     border: none;
     border-radius: 6px;
     cursor: pointer;
     font-weight: 600;
+    font-size: 0.9rem;
     transition: background-color 0.2s;
     white-space: nowrap;
 }
@@ -322,21 +345,17 @@ select:focus {
     transform: scale(0.98);
 }
 
-/* Export Section */
-.export-section {
-    text-align: center;
-}
-
 .export-btn {
-    padding: 1rem 2rem;
+    padding: 0.75rem 1.5rem;
     background: var(--primary-color);
     color: white;
     border: none;
-    border-radius: 8px;
-    font-size: 1.1rem;
+    border-radius: 6px;
+    font-size: 0.95rem;
     font-weight: 600;
     cursor: pointer;
     transition: background-color 0.2s;
+    white-space: nowrap;
 }
 
 .export-btn:hover {
@@ -380,18 +399,28 @@ select:focus {
     }
 
     h1 {
-        font-size: 2rem;
+        font-size: 1.5rem;
     }
 
-    .preset-buttons {
-        justify-content: center;
+    .controls-row {
+        flex-direction: column;
+        align-items: stretch;
     }
 
-    .css-output-container {
+    .control-item {
+        width: 100%;
+    }
+
+    .output-row {
         flex-direction: column;
     }
 
-    .copy-btn {
+    .css-output-item {
+        width: 100%;
+    }
+
+    .copy-btn,
+    .export-btn {
         width: 100%;
     }
 }
