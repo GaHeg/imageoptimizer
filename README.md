@@ -1,4 +1,4 @@
-# CSS Target Practice
+# Browser image optimizer
 
 A client-side web tool for rescaling, cropping, and generating CSS `object-position` values from uploaded images. Perfect for students and web developers who need to prepare images without Photoshop or complex image editing software.
 
